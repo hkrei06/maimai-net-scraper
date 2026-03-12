@@ -1,0 +1,5 @@
+Beautifulsoup 4
+For webscraping
+
+Python-dotenv
+For retrieve .env
