@@ -6,63 +6,26 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ──────────────────────────────────────────────
-# CONFIG
+# AUTH AND SESSION
 # ──────────────────────────────────────────────
-BASE_URL  = "https://maimaidx-eng.com/maimai-mobile"
-SEGA_HOST = "lng-tgk-aime-gw.am-all.net"
-MAI_HOST  = "maimaidx-eng.com"
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/122.0.0.0 Safari/537.36",
-    "Referer": f"{BASE_URL}/home/",
+CLAL = os.getenv("LNGCOOKIE")
+
+AUTH_URL = (
+    "https://lng-tgk-aime-gw.am-all.net/common_auth/login"
+    "?site_id=maimaidxex"
+    "&redirect_url=https://maimaidx-eng.com/maimai-mobile/"
+    "&back_url=https://maimai.sega.com/"
+)
+
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xhtml+xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
-}
-
-LEVELS = {
-    "1":  "LEVEL 1",   "2":  "LEVEL 2",   "3":  "LEVEL 3",
-    "4":  "LEVEL 4",   "5":  "LEVEL 5",   "6":  "LEVEL 6",
-    "7":  "LEVEL 7",   "8":  "LEVEL 7+",  "9":  "LEVEL 8",
-    "10": "LEVEL 8+",  "11": "LEVEL 9",   "12": "LEVEL 9+",
-    "13": "LEVEL 10",  "14": "LEVEL 10+", "15": "LEVEL 11",
-    "16": "LEVEL 11+", "17": "LEVEL 12",  "18": "LEVEL 12+",
-    "19": "LEVEL 13",  "20": "LEVEL 13+", "21": "LEVEL 14",
-    "22": "LEVEL 14+", "23": "LEVEL 15",
-}
-
-# ──────────────────────────────────────────────
-# SINGLETON SESSION
-# ──────────────────────────────────────────────
-_session: requests.Session | None = None
-
-def get_session() -> requests.Session:
-    global _session
-    if _session is None:
-        _session = _build_session()
-    return _session
-
-def _build_session() -> requests.Session:
-    session = requests.Session()
-    session.headers.update(HEADERS)
-
-    lng_raw = os.getenv("LNGCOOKIE")
-    if not lng_raw:
-        raise ValueError("Missing LNGCOOKIE in .env")
-
-    _, _, clal_value = lng_raw.partition("=")
-    session.cookies.set("clal", clal_value.strip(), domain=SEGA_HOST)
-
-    # hit home page — SEGA auto generates userId + _t
-    session.get(f"{BASE_URL}/home/", allow_redirects=True)
-
-    return session
-
-def is_logged_in() -> bool:
-    session = get_session()
-    resp = session.get(f"{BASE_URL}/home/", allow_redirects=True)
-    return "maimaidx-eng.com/maimai-mobile/home" in resp.url
-
+})
+session.cookies.set("clal", CLAL, domain="lng-tgk-aime-gw.am-all.net")
+response = session.get(AUTH_URL, allow_redirects=True)
 
 # ──────────────────────────────────────────────
 # SCRAPING FUNCTIONS
