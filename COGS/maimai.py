@@ -1,3 +1,4 @@
+import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -15,7 +16,7 @@ class MaimaiCog(commands.Cog):
         await interaction.response.defer()
 
         try:
-            plays = fetch_recent_scores(limit=20)
+            plays = await asyncio.to_thread(fetch_recent_scores, 20)
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to fetch recent scores: {e}")
             return
@@ -55,7 +56,7 @@ class MaimaiCog(commands.Cog):
         await interaction.response.defer()
 
         try:
-            results = fetch_song_by_name(name)
+            results = await asyncio.to_thread(fetch_song_by_name, name)
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to search songs: {e}")
             return
@@ -64,12 +65,11 @@ class MaimaiCog(commands.Cog):
             await interaction.followup.send(f"No songs found matching `{name}`.")
             return
 
-        # get detail from the first master/expert result, fallback to first result
-        primary = next(
-            (s for s in results if s["diff"] in ("MASTER", "EXPERT")),
-            results[0]
-        )
-        detail = fetch_song_detail(primary["idx"])
+        try:
+            detail = await asyncio.to_thread(fetch_song_detail, results[0]["idx"])
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to fetch song detail: {e}")
+            return
 
         embed = discord.Embed(
             title=detail["title"],
@@ -79,11 +79,10 @@ class MaimaiCog(commands.Cog):
         embed.add_field(name="Genre",  value=detail["genre"],  inline=True)
         embed.add_field(name="\u200b", value="\u200b",         inline=False)  # spacer
 
-        # show scores for each difficulty found
-        for song in results:
-            score_val = song.get("score") or "No score"
+        for diff in detail["difficulties"]:
+            score_val = diff.get("score") or "No score"
             embed.add_field(
-                name=f"{song['diff']} Lv.{song['level']}",
+                name=f"{diff['diff']} Lv.{diff['level']}",
                 value=f"`{score_val}`",
                 inline=True
             )

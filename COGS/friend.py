@@ -1,3 +1,4 @@
+import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -15,7 +16,7 @@ class FriendsCog(commands.Cog):
         await interaction.response.defer()
 
         try:
-            friends = fetch_friend_list()
+            friends = await asyncio.to_thread(fetch_friend_list)
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to fetch friend list: {e}")
             return

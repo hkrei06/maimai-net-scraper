@@ -9,8 +9,7 @@ load_dotenv()
 # AUTH AND SESSION
 # ──────────────────────────────────────────────
 
-CLAL = os.getenv("LNGCOOKIE")
-
+BASE_URL = "https://maimaidx-eng.com/maimai-mobile"
 AUTH_URL = (
     "https://lng-tgk-aime-gw.am-all.net/common_auth/login"
     "?site_id=maimaidxex"
@@ -18,14 +17,39 @@ AUTH_URL = (
     "&back_url=https://maimai.sega.com/"
 )
 
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xhtml+xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-})
-session.cookies.set("clal", CLAL, domain="lng-tgk-aime-gw.am-all.net")
-response = session.get(AUTH_URL, allow_redirects=True)
+_session: requests.Session | None = None
+
+def get_session() -> requests.Session:
+    global _session
+    if _session is None:
+        lng_raw = os.getenv("LNGCOOKIE", "")
+        _, _, clal_value = lng_raw.partition("=")
+        clal_value = clal_value.strip() or lng_raw.strip()
+
+        s = requests.Session()
+        s.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+        s.cookies.set("clal", clal_value, domain="lng-tgk-aime-gw.am-all.net")
+        resp = s.get(AUTH_URL, allow_redirects=True)
+        print(f"[auth] final URL: {resp.url}")
+        print(f"[auth] status: {resp.status_code}")
+        _session = s
+    return _session
+
+# ──────────────────────────────────────────────
+# LEVEL MAPPING
+# ──────────────────────────────────────────────
+LEVEL_MAP = {
+    "1":   "1",  "2":   "2",  "3":   "3",  "4":   "4",
+    "5":   "5",  "6":   "6",  "7":   "7",  "7+":  "8",
+    "8":   "9",  "8+":  "10", "9":   "11", "9+":  "12",
+    "10":  "13", "10+": "14", "11":  "15", "11+": "16",
+    "12":  "17", "12+": "18", "13":  "19", "13+": "20",
+    "14":  "21", "14+": "22", "15":  "23",
+}
 
 # ──────────────────────────────────────────────
 # SCRAPING FUNCTIONS
@@ -33,7 +57,8 @@ response = session.get(AUTH_URL, allow_redirects=True)
 def fetch_recent_scores(limit: int = 20) -> list[dict]:
     """Returns list of recent plays from the playlog page."""
     session = get_session()
-    resp = session.get(f"{BASE_URL}/record/playlog/")
+    resp = session.get(f"{BASE_URL}/record/")
+    resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
     plays = []
@@ -89,6 +114,7 @@ def fetch_songs_by_level(level: str) -> list[dict]:
     session = get_session()
     url = f"{BASE_URL}/record/musicLevel/search/?level={level}"
     resp = session.get(url)
+    resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
     songs = []
@@ -120,61 +146,75 @@ def fetch_songs_by_level(level: str) -> list[dict]:
 
 
 def fetch_song_by_name(name: str) -> list[dict]:
-    """Search all songs across all genres and return matches by name."""
+    """Search songs using a single request (diff=3), return name + idx matches."""
     session = get_session()
+    url = f"{BASE_URL}/record/musicGenre/search/?genre=99&diff=3"
+    resp = session.get(url)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
 
-    # genre=99 means ALL songs, diff=0 to 4 covers all difficulties
     results = []
-    seen_titles = set()
+    for entry in soup.select("div[class*='score_back']"):
+        name_tag  = entry.select_one(".music_name_block")
+        idx_input = entry.select_one("input[name='idx']")
 
-    for diff_num in range(5):  # 0=BASIC 1=ADVANCED 2=EXPERT 3=MASTER 4=Re:MASTER
-        url = f"{BASE_URL}/record/musicGenre/search/?genre=99&diff={diff_num}"
-        resp = session.get(url)
-        soup = BeautifulSoup(resp.text, "html.parser")
+        if not name_tag or not idx_input:
+            continue
 
-        for entry in soup.select("div[class*='score_back']"):
-            name_tag  = entry.select_one(".music_name_block")
-            idx_input = entry.select_one("input[name='idx']")
-            lv_tag    = entry.select_one(".music_lv_block")
-            score_tag = entry.select_one(".music_score_block")
+        title = name_tag.get_text(strip=True)
+        if name.lower() not in title.lower():
+            continue
 
-            if not name_tag or not idx_input:
-                continue
-
-            title = name_tag.get_text(strip=True)
-
-            # case-insensitive partial match
-            if name.lower() not in title.lower():
-                continue
-
-            diff_map = {0: "BASIC", 1: "ADVANCED", 2: "EXPERT", 3: "MASTER", 4: "Re:MASTER"}
-
-            results.append({
-                "title": title,
-                "diff":  diff_map[diff_num],
-                "level": lv_tag.get_text(strip=True) if lv_tag else "?",
-                "score": score_tag.get_text(strip=True) if score_tag else None,
-                "idx":   idx_input["value"],
-            })
+        results.append({
+            "title": title,
+            "idx":   idx_input["value"],
+        })
 
     return results
 
 
 def fetch_song_detail(idx: str) -> dict:
-    """Returns title, artist, genre for a specific song idx."""
+    """Returns title, artist, genre, and all difficulty scores for a song idx."""
     session = get_session()
     url = f"{BASE_URL}/record/musicDetail/?idx={idx}"
     resp = session.get(url)
+    resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
     title  = soup.select_one(".m_5.f_15.break")
     artist = soup.select_one(".m_5.f_12.break")
     genre  = soup.select_one(".m_10.m_t_5.t_r.f_12.blue")
 
+    # parse per-difficulty scores from the detail page
+    diff_ids = [
+        ("basic",    "BASIC"),
+        ("advanced", "ADVANCED"),
+        ("expert",   "EXPERT"),
+        ("master",   "MASTER"),
+        ("remaster", "Re:MASTER"),
+    ]
+    difficulties = []
+    for block_id, diff_name in diff_ids:
+        block = soup.select_one(f"div#{block_id}")
+        print(f"[detail] {block_id}: {'found' if block else 'NOT FOUND'}")
+        if not block:
+            continue
+
+        lv_tag    = block.select_one(".music_lv_back")
+        score_tag = block.select_one(".music_score_block.w_120")  # achievement % block
+        print(f"[detail] {block_id} lv={lv_tag} score={score_tag}")
+
+        difficulties.append({
+            "diff":  diff_name,
+            "level": lv_tag.get_text(strip=True)    if lv_tag    else "?",
+            "score": score_tag.get_text(strip=True) if score_tag else None,
+        })
+
     return {
-        "title":  title.get_text(strip=True)  if title  else "Unknown",
-        "artist": artist.get_text(strip=True) if artist else "Unknown",
-        "genre":  genre.get_text(strip=True)  if genre  else "Unknown",
+        "title":        title.get_text(strip=True)  if title  else "Unknown",
+        "artist":       artist.get_text(strip=True) if artist else "Unknown",
+        "genre":        genre.get_text(strip=True)  if genre  else "Unknown",
+        "difficulties": difficulties,  # list of {diff, level, score} — only present difficulties included
     }
 
 
@@ -182,6 +222,7 @@ def fetch_friend_list() -> list[dict]:
     """Returns list of friends with name, rating and idx."""
     session = get_session()
     resp = session.get(f"{BASE_URL}/friend/")
+    resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
     friends = []

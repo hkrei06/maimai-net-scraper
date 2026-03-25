@@ -21,8 +21,8 @@ async def on_ready():
 
 async def main():
     async with bot:
-        await bot.load_extension("cogs.maimai")
-        await bot.load_extension("cogs.friend")
+        await bot.load_extension("COGS.maimai")
+        await bot.load_extension("COGS.friend")
         await bot.start(os.getenv("TOKEN"))
 
 asyncio.run(main())
