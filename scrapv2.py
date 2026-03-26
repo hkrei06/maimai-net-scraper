@@ -19,6 +19,10 @@ AUTH_URL = (
 
 _session: requests.Session | None = None
 
+def reset_session() -> None:
+    global _session
+    _session = None
+
 def get_session() -> requests.Session:
     global _session
     if _session is None:
@@ -57,7 +61,7 @@ LEVEL_MAP = {
 def fetch_recent_scores(limit: int = 20) -> list[dict]:
     """Returns list of recent plays from the playlog page."""
     session = get_session()
-    resp = session.get(f"{BASE_URL}/record/")
+    resp = session.get(f"{BASE_URL}/record/", timeout=15, allow_redirects=True)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -113,7 +117,7 @@ def fetch_songs_by_level(level: str) -> list[dict]:
     """Returns list of songs for a given level key (e.g. '21' = LEVEL 14)."""
     session = get_session()
     url = f"{BASE_URL}/record/musicLevel/search/?level={level}"
-    resp = session.get(url)
+    resp = session.get(url, timeout=15, allow_redirects=False)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -149,20 +153,18 @@ def fetch_song_by_name(name: str) -> list[dict]:
     """Search songs using a single request (diff=3), return name + idx matches."""
     session = get_session()
     url = f"{BASE_URL}/record/musicGenre/search/?genre=99&diff=3"
-    resp = session.get(url)
+    resp = session.get(url, timeout=15, allow_redirects=True)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
     results = []
-    for entry in soup.select("div[class*='score_back']"):
-        name_tag  = entry.select_one(".music_name_block")
-        idx_input = entry.select_one("input[name='idx']")
-
-        if not name_tag or not idx_input:
+    for name_div in soup.select("div.music_name_block"):
+        title = name_div.get_text(strip=True)
+        if name.lower() not in title.lower():
             continue
 
-        title = name_tag.get_text(strip=True)
-        if name.lower() not in title.lower():
+        idx_input = name_div.find_parent("form").find("input", {"name": "idx"})
+        if not idx_input:
             continue
 
         results.append({
@@ -177,7 +179,7 @@ def fetch_song_detail(idx: str) -> dict:
     """Returns title, artist, genre, and all difficulty scores for a song idx."""
     session = get_session()
     url = f"{BASE_URL}/record/musicDetail/?idx={idx}"
-    resp = session.get(url)
+    resp = session.get(url, timeout=15, allow_redirects=False)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -221,7 +223,7 @@ def fetch_song_detail(idx: str) -> dict:
 def fetch_friend_list() -> list[dict]:
     """Returns list of friends with name, rating and idx."""
     session = get_session()
-    resp = session.get(f"{BASE_URL}/friend/")
+    resp = session.get(f"{BASE_URL}/friend/", timeout=15, allow_redirects=False)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
