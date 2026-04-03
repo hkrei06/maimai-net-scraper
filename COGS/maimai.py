@@ -1,4 +1,3 @@
-import asyncio
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -16,7 +15,7 @@ class MaimaiCog(commands.Cog):
         await interaction.response.defer()
 
         try:
-            plays = await asyncio.to_thread(fetch_recent_scores, 20)
+            plays = await fetch_recent_scores(20)
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to fetch recent scores: {e}")
             return
@@ -56,7 +55,7 @@ class MaimaiCog(commands.Cog):
         await interaction.response.defer()
 
         try:
-            results = await asyncio.to_thread(fetch_song_by_name, name)
+            results = await fetch_song_by_name(name)
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to search songs: {e}")
             return
@@ -66,7 +65,7 @@ class MaimaiCog(commands.Cog):
             return
 
         try:
-            detail = await asyncio.to_thread(fetch_song_detail, results[0]["idx"])
+            detail = await fetch_song_detail(results[0]["idx"])
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to fetch song detail: {e}")
             return

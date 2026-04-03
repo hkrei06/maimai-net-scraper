@@ -1,13 +1,9 @@
 import os
-import requests
+import aiohttp
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 load_dotenv()
-
-# ──────────────────────────────────────────────
-# AUTH AND SESSION
-# ──────────────────────────────────────────────
 
 BASE_URL = "https://maimaidx-eng.com/maimai-mobile"
 AUTH_URL = (
@@ -17,31 +13,49 @@ AUTH_URL = (
     "&back_url=https://maimai.sega.com/"
 )
 
-_session: requests.Session | None = None
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
-def reset_session() -> None:
+# ──────────────────────────────────────────────
+# AUTH AND SESSION
+# ──────────────────────────────────────────────
+
+_session: aiohttp.ClientSession | None = None
+
+async def reset_session() -> None:
     global _session
+    if _session and not _session.closed:
+        await _session.close()
     _session = None
 
-def get_session() -> requests.Session:
+async def get_session() -> aiohttp.ClientSession:
     global _session
-    if _session is None:
+    if _session is None or _session.closed:
         lng_raw = os.getenv("LNGCOOKIE", "")
-        _, _, clal_value = lng_raw.partition("=")
-        clal_value = clal_value.strip() or lng_raw.strip()
 
-        s = requests.Session()
-        s.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-        })
-        s.cookies.set("clal", clal_value, domain="lng-tgk-aime-gw.am-all.net")
-        resp = s.get(AUTH_URL, allow_redirects=True)
-        print(f"[auth] final URL: {resp.url}")
-        print(f"[auth] status: {resp.status_code}")
+        jar = aiohttp.CookieJar()
+        jar.update_cookies({"clal": lng_raw}, response_url=aiohttp.client.URL("https://lng-tgk-aime-gw.am-all.net"))
+
+        s = aiohttp.ClientSession(headers=HEADERS, cookie_jar=jar)
+        async with s.get(AUTH_URL, allow_redirects=True) as resp:
+            print(f"[auth] final URL: {resp.url}")
+            print(f"[auth] status: {resp.status}")
         _session = s
     return _session
+
+async def _get(url: str) -> str:
+    """Fetch a URL, reset session and raise if Sega kicked us."""
+    session = await get_session()
+    async with session.get(url, allow_redirects=True) as resp:
+        resp.raise_for_status()
+        text = await resp.text()
+        if str(resp.url) != url:
+            await reset_session()
+            raise Exception("Session expired, please try the command again.")
+        return text
 
 # ──────────────────────────────────────────────
 # LEVEL MAPPING
@@ -58,18 +72,14 @@ LEVEL_MAP = {
 # ──────────────────────────────────────────────
 # SCRAPING FUNCTIONS
 # ──────────────────────────────────────────────
-def fetch_recent_scores(limit: int = 20) -> list[dict]:
+async def fetch_recent_scores(limit: int = 20) -> list[dict]:
     """Returns list of recent plays from the playlog page."""
-    session = get_session()
-    resp = session.get(f"{BASE_URL}/record/", timeout=15, allow_redirects=True)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
+    soup = BeautifulSoup(await _get(f"{BASE_URL}/record/"), "html.parser")
 
     plays = []
     for entry in soup.select("div.p_10.t_l.f_0.v_b"):
         play = {}
 
-        # difficulty + track + date
         top = entry.select_one(".playlog_top_container")
         if top:
             diff_img = top.select_one(".playlog_diff")
@@ -80,7 +90,6 @@ def fetch_recent_scores(limit: int = 20) -> list[dict]:
             play["track"] = track_span.text.strip() if track_span else None
             play["date"]  = date_span.text.strip()  if date_span  else None
 
-        # title + level
         title_block = entry.select_one(".basic_block.m_5")
         if title_block:
             level_div = title_block.select_one(".playlog_level_icon")
@@ -89,22 +98,17 @@ def fetch_recent_scores(limit: int = 20) -> list[dict]:
                 level_div.extract()
             play["title"] = title_block.get_text(strip=True)
 
-        # achievement score
         achievement = entry.select_one(".playlog_achievement_txt")
         play["achievement"] = achievement.text.strip() if achievement else None
 
-        # rank image (SSS+, SS, etc.)
         rank_img = entry.select_one(".playlog_scorerank")
         play["rank_img"] = rank_img["src"] if rank_img else None
 
-        # dx score
         dx_block = entry.select_one(".playlog_score_block_star .white")
         play["dx_score"] = dx_block.text.strip() if dx_block else None
 
-        # new record flag
         play["is_new_record"] = bool(entry.select_one(".playlog_achievement_newrecord"))
 
-        # idx for detail page
         idx_input = entry.select_one("input[name='idx']")
         play["idx"] = idx_input["value"] if idx_input else None
 
@@ -113,13 +117,9 @@ def fetch_recent_scores(limit: int = 20) -> list[dict]:
     return plays[:limit]
 
 
-def fetch_songs_by_level(level: str) -> list[dict]:
+async def fetch_songs_by_level(level: str) -> list[dict]:
     """Returns list of songs for a given level key (e.g. '21' = LEVEL 14)."""
-    session = get_session()
-    url = f"{BASE_URL}/record/musicLevel/search/?level={level}"
-    resp = session.get(url, timeout=15, allow_redirects=False)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
+    soup = BeautifulSoup(await _get(f"{BASE_URL}/record/musicLevel/search/?level={level}"), "html.parser")
 
     songs = []
     for entry in soup.select("div[class*='score_back']"):
@@ -149,13 +149,9 @@ def fetch_songs_by_level(level: str) -> list[dict]:
     return songs
 
 
-def fetch_song_by_name(name: str) -> list[dict]:
+async def fetch_song_by_name(name: str) -> list[dict]:
     """Search songs using a single request (diff=3), return name + idx matches."""
-    session = get_session()
-    url = f"{BASE_URL}/record/musicGenre/search/?genre=99&diff=3"
-    resp = session.get(url, timeout=15, allow_redirects=True)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
+    soup = BeautifulSoup(await _get(f"{BASE_URL}/record/musicGenre/search/?genre=99&diff=3"), "html.parser")
 
     results = []
     for name_div in soup.select("div.music_name_block"):
@@ -175,19 +171,16 @@ def fetch_song_by_name(name: str) -> list[dict]:
     return results
 
 
-def fetch_song_detail(idx: str) -> dict:
+async def fetch_song_detail(idx: str) -> dict:
     """Returns title, artist, genre, and all difficulty scores for a song idx."""
-    session = get_session()
-    url = f"{BASE_URL}/record/musicDetail/?idx={idx}"
-    resp = session.get(url, timeout=15, allow_redirects=False)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
+    html = await _get(f"{BASE_URL}/record/musicDetail/?idx={idx}")
+    print(f"[detail] html snippet: {html[:300]}")
+    soup = BeautifulSoup(html, "html.parser")
 
     title  = soup.select_one(".m_5.f_15.break")
     artist = soup.select_one(".m_5.f_12.break")
     genre  = soup.select_one(".m_10.m_t_5.t_r.f_12.blue")
 
-    # parse per-difficulty scores from the detail page
     diff_ids = [
         ("basic",    "BASIC"),
         ("advanced", "ADVANCED"),
@@ -198,13 +191,11 @@ def fetch_song_detail(idx: str) -> dict:
     difficulties = []
     for block_id, diff_name in diff_ids:
         block = soup.select_one(f"div#{block_id}")
-        print(f"[detail] {block_id}: {'found' if block else 'NOT FOUND'}")
         if not block:
             continue
 
         lv_tag    = block.select_one(".music_lv_back")
-        score_tag = block.select_one(".music_score_block.w_120")  # achievement % block
-        print(f"[detail] {block_id} lv={lv_tag} score={score_tag}")
+        score_tag = block.select_one(".music_score_block.w_120")
 
         difficulties.append({
             "diff":  diff_name,
@@ -216,16 +207,13 @@ def fetch_song_detail(idx: str) -> dict:
         "title":        title.get_text(strip=True)  if title  else "Unknown",
         "artist":       artist.get_text(strip=True) if artist else "Unknown",
         "genre":        genre.get_text(strip=True)  if genre  else "Unknown",
-        "difficulties": difficulties,  # list of {diff, level, score} — only present difficulties included
+        "difficulties": difficulties,
     }
 
 
-def fetch_friend_list() -> list[dict]:
+async def fetch_friend_list() -> list[dict]:
     """Returns list of friends with name, rating and idx."""
-    session = get_session()
-    resp = session.get(f"{BASE_URL}/friend/", timeout=15, allow_redirects=False)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
+    soup = BeautifulSoup(await _get(f"{BASE_URL}/friend/"), "html.parser")
 
     friends = []
     for block in soup.select("div.see_through_block"):

@@ -15,7 +15,7 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
     try:
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} slash commands")
+        print(f"Synced {len(synced)} slash commands: {[cmd.name for cmd in synced]}")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
 
@@ -24,5 +24,4 @@ async def main():
         await bot.load_extension("COGS.maimai")
         await bot.load_extension("COGS.friend")
         await bot.start(os.getenv("TOKEN"))
-
 asyncio.run(main())
