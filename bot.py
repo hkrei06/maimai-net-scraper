@@ -10,6 +10,12 @@ intents = discord.Intents.default()
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Dev lock: while under heavy development, only this Discord account may run any
+# slash command. Replace with your own user ID (enable Developer Mode -> right
+# click your name -> Copy User ID). Set to None to allow everyone.
+
+
+
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
@@ -21,7 +27,8 @@ async def on_ready():
 
 async def main():
     async with bot:
-        await bot.load_extension("COGS.maimai")
-        await bot.load_extension("COGS.friend")
+        await bot.load_extension("cogs.maimai")
+        await bot.load_extension("cogs.friend")
+        await bot.load_extension("cogs.b50")
         await bot.start(os.getenv("TOKEN"))
 asyncio.run(main())

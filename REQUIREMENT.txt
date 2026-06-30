@@ -1,5 +1,21 @@
-Beautifulsoup 4
-For webscraping
+discord.py
+For the Discord bot / slash commands
 
-Python-dotenv
-For retrieve .env
+aiohttp
+For async HTTP scraping of maimaidx-eng.com (persistent reusable session)
+
+beautifulsoup4
+For parsing scraped HTML
+
+python-dotenv
+For loading the .env config (cookie + token)
+
+rapidfuzz
+For the fuzzy / semantic song search over the static data
+
+jinja2
+For rendering the HTML score-card templates in /element
+
+playwright
+For turning the rendered HTML into a PNG image
+(run once after install: python -m playwright install chromium)

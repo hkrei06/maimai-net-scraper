@@ -1,7 +1,9 @@
+import asyncio
+
 import discord
 from discord import app_commands
 from discord.ext import commands
-from scrapv2 import fetch_friend_list
+from scripts import scrap
 
 class FriendsCog(commands.Cog):
     def __init__(self, bot):
@@ -15,7 +17,7 @@ class FriendsCog(commands.Cog):
         await interaction.response.defer()
 
         try:
-            friends = await fetch_friend_list()
+            friends = await asyncio.to_thread(scrap.fetch_friend_list)
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to fetch friend list: {e}")
             return

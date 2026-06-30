@@ -1,0 +1,306 @@
+<!--
+  Score card template for /score (Jinja2 + Playwright).
+
+  Rendered by render.py. Edit freely — the renderer passes this context:
+    song.title, song.artist, song.genre, song.bpm, song.jacket (data URI)
+    search_query        (the raw text the user typed)
+    profile (optional)  player header, see scrap.get_profile:
+        icon_url, name, rating, rating_frame_url, course_rank_url, class_rank_url
+    difficulties        list of:
+        diff       display name  (e.g. "MASTER")
+        css        class suffix  (basic|advanced|expert|master|remaster)
+        level      e.g. "13+"
+        constant   chart constant e.g. "13.7"  (may be "")
+        score      highscore / achievement e.g. "100.1234%"  (may be None)
+        playcount  number of plays  (may be None)
+
+  The card auto-sizes to its content; the renderer screenshots the .card element.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg-1: #1b2030;
+    --bg-2: #2a3350;
+    --panel: rgba(255, 255, 255, 0.06);
+    --text: #f4f6ff;
+    --muted: #9aa6c6;
+
+    --basic:    #22bb5b;
+    --advanced: #f2a72e;
+    --expert:   #ff5a78;
+    --master:   #9f51dc;
+    --remaster: #d7a3ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    background: transparent;
+    font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+    color: var(--text);
+  }
+
+  body { padding: 24px; display: inline-block; }
+
+  .card {
+    width: 760px;
+    border-radius: 22px;
+    background: linear-gradient(135deg, var(--bg-2), var(--bg-1));
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+  }
+
+  /* ── player profile ─────────────────────── */
+  .profile {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 24px;
+    background: rgba(0, 0, 0, 0.18);
+  }
+
+  .profile-icon {
+    width: 84px;
+    height: 84px;
+    border-radius: 12px;
+    object-fit: cover;
+    flex: 0 0 auto;
+    background: rgba(0, 0, 0, 0.25);
+  }
+
+  .profile-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+
+  .profile-rating-row { position: relative; display: inline-block; }
+  .profile-rating-frame { height: 34px; display: block; }
+  .profile-rating {
+    position: absolute;
+    top: 50%;
+    right: 16px;
+    transform: translateY(-50%);
+    font-size: 16px;
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+
+  .profile-name { font-size: 22px; font-weight: 700; letter-spacing: 1px; }
+
+  .profile-ranks { display: flex; align-items: center; gap: 10px; }
+  .profile-ranks img { height: 34px; }
+
+  /* ── header ─────────────────────────────── */
+  .header {
+    display: flex;
+    gap: 20px;
+    padding: 24px;
+    background:
+      linear-gradient(135deg, rgba(81, 188, 243, 0.22), rgba(159, 81, 220, 0.22));
+  }
+
+  .jacket {
+    width: 132px;
+    height: 132px;
+    border-radius: 16px;
+    object-fit: cover;
+    flex: 0 0 auto;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.25);
+  }
+
+  .meta { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+
+  .title {
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.15;
+    word-break: break-word;
+  }
+
+  .artist {
+    margin-top: 6px;
+    font-size: 16px;
+    color: var(--muted);
+    word-break: break-word;
+  }
+
+  .tags { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .tag {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--text);
+  }
+
+  /* ── difficulty rows ────────────────────── */
+  .rows { padding: 18px 24px 26px; display: flex; flex-direction: column; gap: 12px; }
+
+  .row {
+    display: grid;
+    grid-template-columns: 132px 1fr auto;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 18px;
+    border-radius: 14px;
+    background: var(--panel);
+    border-left: 6px solid var(--diff-color);
+  }
+
+  .row.basic    { --diff-color: var(--basic); }
+  .row.advanced { --diff-color: var(--advanced); }
+  .row.expert   { --diff-color: var(--expert); }
+  .row.master   { --diff-color: var(--master); }
+  .row.remaster { --diff-color: var(--remaster); }
+
+  .diff-name { font-weight: 700; font-size: 15px; color: var(--diff-color); }
+  .diff-level { font-size: 22px; font-weight: 700; line-height: 1; margin-top: 2px; }
+  .diff-constant { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .score { text-align: right; }
+  .score-value { font-size: 26px; font-weight: 800; letter-spacing: 0.5px; }
+  .score-value.none { color: var(--muted); font-weight: 600; font-size: 18px; }
+
+  .playcount {
+    text-align: right;
+    min-width: 86px;
+  }
+  .playcount .num { font-size: 22px; font-weight: 700; }
+  .playcount .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+
+  .footer {
+    padding: 0 24px 18px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    
+    <div class="profile">
+      <img class="profile-icon" src="https://maimaidx-eng.com/maimai-mobile/img/Icon/8af23ca9f84d04d5.png" alt="">
+      <div class="profile-info">
+        <div class="profile-rating-row">
+          <img class="profile-rating-frame" src="https://maimaidx-eng.com/maimai-mobile/img/rating_base_rainbow.png?ver=1.60" alt="">
+          <span class="profile-rating">16263</span>
+        </div>
+        <div class="profile-name">Ｈａｋｕｒｅｉ</div>
+        <div class="profile-ranks">
+          <img class="profile-course" src="https://maimaidx-eng.com/maimai-mobile/img/course/course_rank_00T7GHJvGe.png" alt="">
+          <img class="profile-class" src="https://maimaidx-eng.com/maimai-mobile/img/class/class_rank_s_05AJFCJjbq.png" alt="">
+        </div>
+      </div>
+    </div>
+    
+
+    <div class="header">
+      
+      <img class="jacket" src="data:image/svg+xml;utf8,&lt;svg xmlns=&#39;http://www.w3.org/2000/svg&#39; width=&#39;132&#39; height=&#39;132&#39;&gt;&lt;rect width=&#39;132&#39; height=&#39;132&#39; rx=&#39;16&#39; fill=&#39;%233a4466&#39;/&gt;&lt;/svg&gt;" alt="">
+      
+      <div class="meta">
+        <div class="title">PANDORA PARADOXXX</div>
+        <div class="artist">削</div>
+        <div class="tags">
+          <span class="tag">maimai</span>
+          <span class="tag">BPM 240</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="rows">
+      
+      <div class="row basic">
+        <div class="diff">
+          <div class="diff-name">BASIC</div>
+          <div class="diff-level">7</div>
+          <div class="diff-constant">7.0</div>
+        </div>
+        <div class="score">
+          
+          <div class="score-value">99.5421%</div>
+          
+        </div>
+        <div class="playcount">
+          <div class="num">12</div>
+          <div class="lbl">plays</div>
+        </div>
+      </div>
+      
+      <div class="row advanced">
+        <div class="diff">
+          <div class="diff-name">ADVANCED</div>
+          <div class="diff-level">10</div>
+          <div class="diff-constant">10.2</div>
+        </div>
+        <div class="score">
+          
+          <div class="score-value">98.1003%</div>
+          
+        </div>
+        <div class="playcount">
+          <div class="num">8</div>
+          <div class="lbl">plays</div>
+        </div>
+      </div>
+      
+      <div class="row expert">
+        <div class="diff">
+          <div class="diff-name">EXPERT</div>
+          <div class="diff-level">13</div>
+          <div class="diff-constant">13.4</div>
+        </div>
+        <div class="score">
+          
+          <div class="score-value">100.2841%</div>
+          
+        </div>
+        <div class="playcount">
+          <div class="num">40</div>
+          <div class="lbl">plays</div>
+        </div>
+      </div>
+      
+      <div class="row master">
+        <div class="diff">
+          <div class="diff-name">MASTER</div>
+          <div class="diff-level">14+</div>
+          <div class="diff-constant">14.9</div>
+        </div>
+        <div class="score">
+          
+          <div class="score-value">99.7612%</div>
+          
+        </div>
+        <div class="playcount">
+          <div class="num">73</div>
+          <div class="lbl">plays</div>
+        </div>
+      </div>
+      
+      <div class="row remaster">
+        <div class="diff">
+          <div class="diff-name">Re:MASTER</div>
+          <div class="diff-level">15</div>
+          <div class="diff-constant">15.0</div>
+        </div>
+        <div class="score">
+          
+          <div class="score-value none">No play</div>
+          
+        </div>
+        <div class="playcount">
+          <div class="num">—</div>
+          <div class="lbl">plays</div>
+        </div>
+      </div>
+      
+    </div>
+
+    <div class="footer">Search: pandora</div>
+  </div>
+</body>
+</html>
