@@ -4,8 +4,6 @@
   Rendered by render.py. Edit freely — the renderer passes this context:
     song.title, song.artist, song.genre, song.bpm, song.jacket (data URI)
     search_query        (the raw text the user typed)
-    profile (optional)  player header, see scrap.get_profile:
-        icon_url, name, rating, rating_frame_url, course_rank_url, class_rank_url
     difficulties        list of:
         diff       display name  (e.g. "MASTER")
         css        class suffix  (basic|advanced|expert|master|remaster)
@@ -52,44 +50,6 @@
     box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
     overflow: hidden;
   }
-
-  /* ── player profile ─────────────────────── */
-  .profile {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 20px 24px;
-    background: rgba(0, 0, 0, 0.18);
-  }
-
-  .profile-icon {
-    width: 84px;
-    height: 84px;
-    border-radius: 12px;
-    object-fit: cover;
-    flex: 0 0 auto;
-    background: rgba(0, 0, 0, 0.25);
-  }
-
-  .profile-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-
-  .profile-rating-row { position: relative; display: inline-block; }
-  .profile-rating-frame { height: 34px; display: block; }
-  .profile-rating {
-    position: absolute;
-    top: 50%;
-    right: 16px;
-    transform: translateY(-50%);
-    font-size: 16px;
-    font-weight: 800;
-    color: #fff;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-  }
-
-  .profile-name { font-size: 22px; font-weight: 700; letter-spacing: 1px; }
-
-  .profile-ranks { display: flex; align-items: center; gap: 10px; }
-  .profile-ranks img { height: 34px; }
 
   /* ── header ─────────────────────────────── */
   .header {
@@ -180,23 +140,6 @@
 </head>
 <body>
   <div class="card">
-    
-    <div class="profile">
-      <img class="profile-icon" src="https://maimaidx-eng.com/maimai-mobile/img/Icon/8af23ca9f84d04d5.png" alt="">
-      <div class="profile-info">
-        <div class="profile-rating-row">
-          <img class="profile-rating-frame" src="https://maimaidx-eng.com/maimai-mobile/img/rating_base_rainbow.png?ver=1.60" alt="">
-          <span class="profile-rating">16263</span>
-        </div>
-        <div class="profile-name">Ｈａｋｕｒｅｉ</div>
-        <div class="profile-ranks">
-          <img class="profile-course" src="https://maimaidx-eng.com/maimai-mobile/img/course/course_rank_00T7GHJvGe.png" alt="">
-          <img class="profile-class" src="https://maimaidx-eng.com/maimai-mobile/img/class/class_rank_s_05AJFCJjbq.png" alt="">
-        </div>
-      </div>
-    </div>
-    
-
     <div class="header">
       
       <img class="jacket" src="data:image/svg+xml;utf8,&lt;svg xmlns=&#39;http://www.w3.org/2000/svg&#39; width=&#39;132&#39; height=&#39;132&#39;&gt;&lt;rect width=&#39;132&#39; height=&#39;132&#39; rx=&#39;16&#39; fill=&#39;%233a4466&#39;/&gt;&lt;/svg&gt;" alt="">

@@ -115,15 +115,11 @@ class MaimaiCog(commands.Cog):
             # Live scrape is best-effort; still render the static card.
             score_note = f" (live scores unavailable: {e})"
 
-        # 4) Render the card image. The player profile header is best-effort.
+        # 4) Render the card image.
         render_song = dict(song)
         render_song["jacket"] = songdb.jacket_data_uri(song["image_url"])
         try:
-            profile = await asyncio.to_thread(scrap.get_profile)
-        except Exception:
-            profile = None
-        try:
-            png = await render.render_score_card(render_song, difficulties, name, profile)
+            png = await render.render_score_card(render_song, difficulties, name)
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to render score card: {e}")
             return

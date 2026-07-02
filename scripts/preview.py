@@ -38,14 +38,6 @@ SAMPLE = {
             "artist": "削","genre": "maimai", "bpm": 240, "jacket": _JACKET,
         },
         search_query="pandora",
-        profile={
-            "icon_url": "https://maimaidx-eng.com/maimai-mobile/img/Icon/8af23ca9f84d04d5.png",
-            "name": "Ｈａｋｕｒｅｉ",
-            "rating": "16263",
-            "rating_frame_url": "https://maimaidx-eng.com/maimai-mobile/img/rating_base_rainbow.png?ver=1.60",
-            "course_rank_url": "https://maimaidx-eng.com/maimai-mobile/img/course/course_rank_00T7GHJvGe.png",
-            "class_rank_url": "https://maimaidx-eng.com/maimai-mobile/img/class/class_rank_s_05AJFCJjbq.png",
-        },
         difficulties=[
             {"diff": "BASIC", "css": "basic", "level": "7", "constant": "7.0", "score": "99.5421%", "playcount": 12},
             {"diff": "ADVANCED", "css": "advanced", "level": "10", "constant": "10.2", "score": "98.1003%", "playcount": 8},

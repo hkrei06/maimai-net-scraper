@@ -13,10 +13,8 @@ synchronous; async callers (cogs) should wrap them in ``asyncio.to_thread``.
 
 from __future__ import annotations
 
-import base64
 import os
 import threading
-import time
 from urllib.parse import quote
 
 from curl_cffi import requests as cffi_requests
@@ -56,13 +54,6 @@ _lock = threading.Lock()
 # the idx expire (see get_song_index / IdxExpired below).
 _song_index: list[dict] | None = None
 _song_index_lock = threading.Lock()
-
-# Cached player profile scraped from /home, refreshed when older than the TTL
-# or when the session resets (see get_profile below).
-PROFILE_TTL = 600  # seconds (10 min) — profile data (esp. rating) is volatile
-_profile: dict | None = None
-_profile_at: float = 0.0
-_profile_lock = threading.Lock()
 
 
 def validate_clal(session: cffi_requests.Session) -> str:
@@ -130,12 +121,11 @@ def get_session() -> tuple[cffi_requests.Session, str]:
 
 def reset_session() -> None:
     """Drop the cached session so the next call re-authenticates."""
-    global _session, _cookies, _song_index, _profile
+    global _session, _cookies, _song_index
     with _lock:
         _session = None
         _cookies = None
         _song_index = None  # idx are session-scoped; force a fresh scrape
-        _profile = None     # re-scrape /home after a fresh login
 
 
 def _get(url: str, referer: str | None = None):
@@ -335,87 +325,6 @@ def encode_idx(idx: str) -> str:
         if not (ch.isascii() and ch.isalnum()):
             return idx[:i] + quote(idx[i:], safe="", encoding="utf-8")
     return idx
-
-
-# ── Player profile (scraped once from /home) ─────────────────────────────────
-#
-# The /home page carries the player header: icon, name, rating frame + value,
-# course rank and class rank. Class names are stable across users; only the
-# image filenames (costume/rank artwork) differ per account, so we select by
-# stable class/path and read the per-user src/text. Scraped once and cached
-# (cleared on reset_session) so commands don't re-fetch /home every time.
-
-HOME_URL = f"{MOBILE}/home/"
-
-
-def _img_src(node) -> str:
-    """Absolute src of an <img> node (prefix BASE_URL if relative), else ''."""
-    if not node:
-        return ""
-    src = node.get("src", "")
-    if src and not src.startswith("http"):
-        src = f"{BASE_URL}{src}"
-    return src
-
-
-def _img_data_uri(url: str) -> str:
-    """Download a maimai image URL and return it as a base64 ``data:`` URI.
-
-    Profile/rank art lives on maimai's server. Embedding it (rather than passing
-    a remote URL to the template) is what makes it render reliably: Playwright
-    often screenshots before a remote <img> finishes loading. Returns '' on any
-    failure so a missing image degrades gracefully instead of breaking profile.
-    """
-    if not url:
-        return ""
-    try:
-        session, cookies = get_session()
-        resp = session.get(url, headers={"Cookie": cookies, "User-Agent": USER_AGENT})
-        if resp.status_code != 200:
-            return ""
-        mime = (resp.headers.get("Content-Type") or "image/png").split(";")[0].strip()
-        b64 = base64.b64encode(resp.content).decode("ascii")
-        return f"data:{mime};base64,{b64}"
-    except Exception:
-        return ""
-
-
-def _scrape_profile() -> dict:
-    soup = BeautifulSoup(fetch_html(HOME_URL, referer=f"{MOBILE}/"), "html.parser")
-    block = soup.select_one(".see_through_block .basic_block")
-    if not block:
-        raise RuntimeError("could not find the profile block on /home")
-
-    name_el = block.select_one(".name_block")
-    rating_el = block.select_one(".rating_block")
-    # Images are embedded as data URIs so they render in the Playwright shot.
-    return {
-        "icon_url":         _img_data_uri(_img_src(block.select_one("img[src*='/Icon/']"))),
-        "name":             name_el.get_text(strip=True) if name_el else "",
-        "rating":           rating_el.get_text(strip=True) if rating_el else "",
-        "rating_frame_url": _img_data_uri(_img_src(block.select_one("img[src*='/rating_base_']"))),
-        "course_rank_url":  _img_data_uri(_img_src(block.select_one("img[src*='/course/course_rank_']"))),
-        "class_rank_url":   _img_data_uri(_img_src(block.select_one("img[src*='/class/class_rank_']"))),
-    }
-
-
-def get_profile(force: bool = False) -> dict:
-    """Cached player profile from /home, re-scraped when stale.
-
-    Returns ``icon_url``, ``name``, ``rating`` (string), ``rating_frame_url``,
-    ``course_rank_url`` and ``class_rank_url``. Re-scraped when the cache is older
-    than ``PROFILE_TTL`` (so profile/rating changes show within ~10 min) or after
-    ``reset_session`` clears it. Pass ``force=True`` to re-scrape immediately.
-    """
-    global _profile, _profile_at
-    with _profile_lock:
-        if force or _profile is None or time.time() - _profile_at > PROFILE_TTL:
-            _profile = _scrape_profile()
-            _profile_at = time.time()
-            # Don't print the raw name: it may be full-width/JP and crash a
-            # non-UTF-8 console (e.g. cp1252), which would kill the profile fetch.
-            print(f"[scrap] cached profile (rating {_profile['rating']})")
-        return _profile
 
 
 def fetch_song_detail(idx: str) -> dict:

@@ -62,16 +62,15 @@ async def _html_to_png(html: str, selector: str = ".card") -> bytes:
 
 
 async def render_score_card(
-    song: dict, difficulties: list[dict], search_query: str, profile: dict | None = None
+    song: dict, difficulties: list[dict], search_query: str
 ) -> bytes:
     """Render the score card template to PNG bytes.
 
     ``song`` must include a ``jacket`` data URI (see songdb.jacket_data_uri).
-    ``profile`` is the optional player header (see scrap.get_profile).
     """
     template = _env.get_template("score_card.html")
     html = template.render(
-        song=song, difficulties=difficulties, search_query=search_query, profile=profile
+        song=song, difficulties=difficulties, search_query=search_query
     )
     return await _html_to_png(html, selector=".card")
 
