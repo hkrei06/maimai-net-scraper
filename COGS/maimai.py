@@ -5,7 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from scripts import render, scrap, songdb
+from scripts import checks, render, scrap, songdb
 
 
 class MaimaiCog(commands.Cog):
@@ -79,45 +79,53 @@ class MaimaiCog(commands.Cog):
         name="score",
         description="Search a song and show your highscores as an image card",
     )
+    @checks.user_cooldown()  # 1 use / 17s per user
     @app_commands.describe(name="Song name to search for (fuzzy/semantic)")
     @app_commands.autocomplete(name=song_autocomplete)
     async def score(self, interaction: discord.Interaction, name: str):
         await interaction.response.defer()
 
-        # 1) Semantic (fuzzy) search over the bundled static data.
+        # 1) Semantic (fuzzy) search over the bundled static data to validate the
+        #    typed name and resolve the header info (artist / genre / bpm / jacket).
         song = None if not name.strip() else songdb.best_match(name)
         if song is None:
             await interaction.followup.send("song not found, please try again")
             return
 
-        # 2) Start from the static difficulty data (level + constant + designer).
-        difficulties = [dict(d) for d in song["difficulties"]]
-        by_diff = {d["diff"]: d for d in difficulties}
-        for d in difficulties:
-            d.setdefault("score", None)
-            d.setdefault("playcount", None)
-
-        # 3) Overlay the user's live scores from maimaidx-eng.com. The song-list
-        #    idx are cached and reused across commands; fetch_live_detail_by_name
-        #    transparently refreshes them if they've expired.
-        score_note = ""
+        # 2) Fetch the difficulty data (levels + scores) live from maimaidx-eng.com,
+        #    and run the local prep — Chromium warm-up and the static jacket
+        #    encoding — concurrently so they overlap the network round-trip. The
+        #    browser is a shared singleton, so warm() is a no-op once launched.
+        detail_task = asyncio.to_thread(scrap.fetch_live_detail_by_name, song["title"], True)
+        jacket_task = asyncio.to_thread(songdb.jacket_data_uri, song["image_url"])
+        warm_task = asyncio.create_task(render.warm())
         try:
-            detail = await asyncio.to_thread(scrap.fetch_live_detail_by_name, song["title"], True)
-            if detail:
-                for live in detail["difficulties"]:
-                    target = by_diff.get(live["diff"])
-                    if target:
-                        target["score"] = live.get("score")
-                        target["playcount"] = live.get("playcount")
-            else:
-                score_note = " (no live scores found for this title)"
+            detail, jacket, _ = await asyncio.gather(detail_task, jacket_task, warm_task)
         except Exception as e:
-            # Live scrape is best-effort; still render the static card.
-            score_note = f" (live scores unavailable: {e})"
+            await interaction.followup.send(f"❌ Failed to fetch scores: {e}")
+            return
+
+        if not detail or not detail["difficulties"]:
+            await interaction.followup.send("No live data found for this song.")
+            return
+
+        # 3) Build the difficulty rows straight from the live data.
+        css_by_diff = {name: css for _prefix, name, css in songdb.DIFFICULTIES}
+        difficulties = [
+            {
+                "diff":      d["diff"],
+                "css":       css_by_diff.get(d["diff"], ""),
+                "level":     d.get("level", "?"),
+                "score":     d.get("score"),
+                "constant":  "",
+                "playcount": None,
+            }
+            for d in detail["difficulties"]
+        ]
 
         # 4) Render the card image.
         render_song = dict(song)
-        render_song["jacket"] = songdb.jacket_data_uri(song["image_url"])
+        render_song["jacket"] = jacket
         try:
             png = await render.render_score_card(render_song, difficulties, name)
         except Exception as e:
@@ -125,7 +133,7 @@ class MaimaiCog(commands.Cog):
             return
 
         file = discord.File(io.BytesIO(png), filename="score.png")
-        content = f"🎵 **{song['title']}**{score_note}"
+        content = f"🎵 **{song['title']}**"
         await interaction.followup.send(content=content, file=file)
 
 

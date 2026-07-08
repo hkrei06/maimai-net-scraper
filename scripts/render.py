@@ -38,6 +38,16 @@ async def _get_browser():
     return _browser
 
 
+async def warm() -> None:
+    """Launch the shared browser ahead of time so it can overlap slow I/O.
+
+    Cheap to call repeatedly: the browser is a shared singleton, so only the
+    first triggered command actually pays the launch cost — every later command
+    (and every other user) reuses the same instance.
+    """
+    await _get_browser()
+
+
 async def close() -> None:
     """Tear down the shared browser (call on bot shutdown)."""
     global _pw, _browser
